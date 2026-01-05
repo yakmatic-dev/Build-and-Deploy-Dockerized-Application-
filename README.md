@@ -229,6 +229,10 @@ This ensures:
 3. **Load and run**: SSH into server, load image, stop old container, start new one
 
 **Environment**: Production (requires approval if configured)
+<img width="1904" height="743" alt="image" src="https://github.com/user-attachments/assets/b91b46c7-f3b4-46a6-b3b8-b5abf486b82f" />
+
+<img width="1916" height="880" alt="image" src="https://github.com/user-attachments/assets/55372c5d-d8d3-441f-8077-518ab12bb025" />
+
 
 ## Deployment Process
 
