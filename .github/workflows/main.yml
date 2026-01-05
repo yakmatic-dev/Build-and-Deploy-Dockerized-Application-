@@ -1,4 +1,4 @@
-name: Build and Deploy Dockerized JAR - PetClinic
+name: Build and Deploy Dockerized JAR - PetClinic.
 on:
   push:
     branches:
