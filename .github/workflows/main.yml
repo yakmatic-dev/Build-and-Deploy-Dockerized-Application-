@@ -28,9 +28,11 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      # Set dynamic Docker image tag (branch + short commit SHA)
+      # Set dynamic Docker image tag (sanitize branch name)
       - name: Set Docker image tag
-        run: echo "IMAGE_TAG=${GITHUB_REF_NAME}-${GITHUB_SHA::8}" >> $GITHUB_ENV
+        run: |
+          SANITIZED_BRANCH=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+          echo "IMAGE_TAG=${SANITIZED_BRANCH}-${GITHUB_SHA::8}" >> $GITHUB_ENV
 
       # Build Docker image with dynamic tag
       - name: Build Docker image
@@ -83,8 +85,9 @@ jobs:
           script: |
             cd ${{ secrets.SERVER_DEPLOY_PATH }}
 
-            # Set dynamic image tag
-            IMAGE_TAG=${GITHUB_REF_NAME}-${GITHUB_SHA::8}
+            # Sanitize branch name for Docker tag
+            SANITIZED_BRANCH=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+            IMAGE_TAG=${SANITIZED_BRANCH}-${GITHUB_SHA::8}
 
             # Load Docker image from tarball
             docker load -i spring-petclinic.tar
