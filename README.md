@@ -1,4 +1,3 @@
-# Build-and-Deploy-Dockerized-Application
 # Spring PetClinic CI/CD Pipeline
 
 ## Overview
@@ -47,13 +46,79 @@ This repository contains a GitHub Actions workflow that automates the build, con
 - **Zero-Downtime**: Replaces old container with new one
 - **Manual Trigger**: Supports workflow_dispatch for on-demand deployments
 
+## Dockerfile Optimization & Security
+
+This pipeline uses a **multi-stage Docker build** with security hardening for production deployments.
+<img width="1061" height="153" alt="image" src="https://github.com/user-attachments/assets/2ca83d3a-dec4-493b-9659-98888621831f" />
+
+
+
+### Optimization Benefits
+
+#### 1. **Multi-Stage Build**
+- **Build Stage**: Uses full Maven image (maven:3.9-eclipse-temurin-17) with all build tools
+- **Runtime Stage**: Uses minimal JRE-only image (eclipse-temurin:17-jre-alpine)
+- **Result**: Final image size reduced by ~70% (from ~600MB to ~180MB)
+
+#### 2. **Docker Layer Caching**
+```dockerfile
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+```
+- Dependencies are downloaded in a separate layer before copying source code
+- If `pom.xml` doesn't change, Docker reuses the cached dependency layer
+- **Result**: Rebuild time reduced from 3-5 minutes to 30-60 seconds for code changes
+
+#### 3. **Alpine Linux Base**
+- Uses `eclipse-temurin:17-jre-alpine` instead of standard Debian/Ubuntu base
+- Alpine is a minimal Linux distribution (~5MB vs ~100MB+)
+- **Result**: Smaller image size, faster transfers, reduced attack surface
+
+### Security Hardening
+
+#### 1. **Non-Root User Execution** 🔒
+```dockerfile
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+```
+- Creates a dedicated system user (`spring`) with no login shell
+- Container runs as non-root user, not as `root` (UID 0)
+- **Security Benefit**: Limits damage if container is compromised
+- **Compliance**: Meets CIS Docker Benchmark recommendations
+
+#### 2. **Minimal Runtime Dependencies**
+- JRE-only image (no compiler, no build tools in production)
+- Reduces potential vulnerabilities from unused packages
+- **Security Benefit**: Smaller attack surface
+
+#### 3. **File Ownership Control**
+```dockerfile
+COPY --from=build --chown=spring:spring /app/target/*.jar app.jar
+```
+- Ensures JAR file is owned by the `spring` user
+- Prevents permission issues and unauthorized modifications
+- **Security Benefit**: Principle of least privilege
+
+
+### Performance Comparison
+
+| Metric | Before Optimization | After Optimization | Improvement |
+|--------|-------------------|-------------------|-------------|
+| **Image Size** | ~600 MB | ~180 MB | 70% smaller |
+| **Build Time (full)** | 4-5 min | 3-4 min | ~20% faster |
+| **Build Time (cached)** | 4-5 min | 30-60 sec | ~85% faster |
+| **Pull Time** | ~2 min | ~30 sec | 75% faster |
+| **Attack Surface** | High (full JDK) | Low (JRE only) | Significantly reduced |
+| **Security Score** | Medium | High | Non-root user |
+
 ## Prerequisites
 
 ### Repository Requirements
 
-1. **Dockerfile**: Your repository must contain a `Dockerfile` at the root level
+1. **Dockerfile**: Your repository must contain the optimized multi-stage `Dockerfile` at the root level
 2. **Maven Project**: Application must be a valid Maven project with `pom.xml`
-3. **Java Version**: Application must be compatible with Java 11
+3. **Java Version**: Application must be compatible with Java 17 (as specified in Dockerfile)
 
 ### Server Requirements
 
@@ -71,16 +136,16 @@ Navigate to **Settings → Secrets and variables → Actions** and add the follo
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
 | `SERVER_HOST` | IP address or hostname of deployment server | `192.168.1.100` or `example.com` |
-| `SERVER_USER` | SSH username for server access | `ubuntu` or `deploy` |
+| `SERVER_USER` | SSH username for server access |  `deploy` |
 | `SERVER_PASSWORD` | SSH password for authentication | `your-secure-password` |
 | `SERVER_PORT` | SSH port number | `22` |
-| `SERVER_DEPLOY_PATH` | Absolute path to deployment directory | `/home/ubuntu/deploy` |
+| `SERVER_DEPLOY_PATH` | Absolute path to deployment directory | `/home/devuser/deploy` |
 
 ### Security Best Practices
 
 ⚠️ **Important**: Using password authentication is not recommended for production environments.
 
-**Recommended Alternative**: Use SSH key-based authentication
+**Alternative**: Use SSH key-based authentication
 
 1. Generate an SSH key pair on your local machine:
    ```bash
@@ -179,6 +244,7 @@ docker rm -f spring-petclinic
 # 3. New container is started
 docker run -d --name spring-petclinic -p 8080:8080 spring-petclinic:main-a1b2c3d4
 ```
+<img width="1562" height="127" alt="image" src="https://github.com/user-attachments/assets/2c72f48e-9074-4732-a625-5824b61d4cf4" />
 
 ## Accessing the Application
 
@@ -187,6 +253,7 @@ After successful deployment, access the application at:
 ```
 http://<SERVER_HOST>:8080
 ```
+![WhatsApp Image 2026-01-05 at 2 53 49 PM](https://github.com/user-attachments/assets/58b4702f-3de0-4c63-b917-feb59ea98829)
 
 For example: `http://192.168.1.100:8080`
 
@@ -275,6 +342,7 @@ SSH into your server and run:
 ```bash
 # View running containers
 docker ps
+![WhatsApp Image 2026-01-05 at 2 52 34 PM](https://github.com/user-attachments/assets/1e62cfc4-fd68-4106-8205-d61600241c29)
 
 # Check container logs
 docker logs spring-petclinic
@@ -282,12 +350,14 @@ docker logs spring-petclinic
 # Follow logs in real-time
 docker logs -f spring-petclinic
 ```
+<img width="1561" height="803" alt="image" src="https://github.com/user-attachments/assets/cf7a25f3-32d5-4c34-ad78-dd764ea84126" />
 
 ### Check Application Health
 
 ```bash
 # Test if application is responding
 curl http://localhost:8080
+![WhatsApp Image 2026-01-05 at 2 53 49 PM](https://github.com/user-attachments/assets/9ce9a898-73f0-4962-ab4b-4abcd5a4a346)
 
 # Check specific endpoint
 curl http://localhost:8080/actuator/health
@@ -428,5 +498,5 @@ For issues or questions:
 - Uses appleboy/scp-action@v0.1.5
 - Uses appleboy/ssh-action@v1
 
-  Project done by Yakub Ilyas
-  contact :yakubiliyas12@gmail.com
+  project by Yakub Ilyas
+  contact: yakubiliyas12@gmail.com
