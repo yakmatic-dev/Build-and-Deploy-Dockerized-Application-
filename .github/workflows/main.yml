@@ -1,0 +1,96 @@
+name: Build and Deploy Dockerized JAR - PetClinic
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # Checkout repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Set up Java 11 for Maven build
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'microsoft'
+
+      # Build Spring Boot application
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+
+      # Set dynamic Docker image tag (branch + short commit SHA)
+      - name: Set Docker image tag
+        run: echo "IMAGE_TAG=${GITHUB_REF_NAME}-${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      # Build Docker image with dynamic tag
+      - name: Build Docker image
+        run: docker build -t spring-petclinic:${{ env.IMAGE_TAG }} .
+
+      # Save Docker image as artifact
+      - name: Save Docker image as artifact
+        run: docker save spring-petclinic:${{ env.IMAGE_TAG }} -o spring-petclinic.tar
+
+      # Upload Docker image artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: spring-petclinic.tar
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: Production
+    permissions:
+      contents: read
+
+    steps:
+      # Download Docker image artifact
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      # Copy Docker image to remote server
+      - name: Copy Docker image to server
+        uses: appleboy/scp-action@v0.1.5
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "spring-petclinic.tar"
+          target: ${{ secrets.SERVER_DEPLOY_PATH }}
+
+      # Load, remove old container, and run new container with dynamic tag
+      - name: Load and run Docker container on server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.SERVER_DEPLOY_PATH }}
+
+            # Set dynamic image tag
+            IMAGE_TAG=${GITHUB_REF_NAME}-${GITHUB_SHA::8}
+
+            # Load Docker image from tarball
+            docker load -i spring-petclinic.tar
+
+            # Stop and remove old container if it exists
+            docker rm -f spring-petclinic || true
+
+            # Run new container with dynamic tag
+            docker run -d --name spring-petclinic -p 8080:8080 spring-petclinic:${IMAGE_TAG}
